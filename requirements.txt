@@ -27,4 +27,5 @@ ddgs
 langchain-cohere
 langchain_tavily
 streamlit
+google-search-results
 rich[jupyter]

@@ -6,43 +6,56 @@ from src.langgraph.llms.nvidiallm import NvidiaLLM
 from src.langgraph.graph.graph_builder import GraphBuilder
 from src.langgraph.ui.streamlitui.display_result import DisplayResultStreamlit
 
+
 def load_langgraph_agenticai_app():
     """
-    Loads and runs the LangGraph AgenticAI app with streamlit UI.
-    This function initializes the UI, handles user input and configures the llm model.
-    Its sets up the graph based on selected use case and llm model.
+    Loads and runs the LangGraph AgenticAI app with Streamlit UI.
+    - Initializes the UI and retrieves user input.
+    - Configures the selected LLM model.
+    - Builds the graph based on the selected use case.
+    - Displays the result interactively.
     """
 
-    UI = LoadStreamlit()
-    user_input = UI.load_streamlit_ui()
+    # Load Streamlit UI
+    ui_loader = LoadStreamlit()
+    user_input = ui_loader.load_streamlit_ui()
+
     if not user_input:
-        st.warning("☠️ Failed to load user input")
-        st.stop()
+        st.warning("⚠️ Failed to load user input")
+        return
 
     user_message = st.chat_input("Enter your message")
+    if not user_message:
+        return
 
-    if user_message:
-        try:
-            if user_input['selected_llm'] == "Openrouter":
-                llm = OpenrouterLLM(user_input).get_llm_model()
-            elif user_input['selected_llm'] == "Groq":
-                llm = GroqLLM(user_input).get_llm_model()
-            elif user_input['selected_llm'] == "NVIDIA":
-                llm = NvidiaLLM(user_input).get_llm_model()
+    # Map LLM providers to their respective classes
+    llm_providers = {
+        "Openrouter": OpenrouterLLM,
+        "Groq": GroqLLM,
+        "NVIDIA": NvidiaLLM,
+    }
 
-            usecase = user_input.get("selected_use_case")
+    try:
+        llm_class = llm_providers.get(user_input.get("selected_llm"))
+        if not llm_class:
+            st.error(f"❌ Unsupported LLM provider: {user_input.get('selected_llm')}")
+            return
 
-        except Exception as e:
-            st.error(f"Error processing initialization of the model: {e}")
-            st.stop() 
+        llm = llm_class(user_input).get_llm_model()
+        usecase = user_input.get("selected_use_case")
 
-        try:
-            graph_builder = GraphBuilder(llm)
-            graph = graph_builder.setup_graph(usecase)
-            DisplayResultStreamlit(usecase, graph, user_message).display_result_on_ui()
-        
-        except Exception as e:
-            st.error(f"Error setting up graph: {e}")
-            st.stop() 
+    except Exception as e:
+        st.error(f"⚠️ Error initializing model: {e}")
+        st.stop()
 
-        
+    try:
+        graph_builder = GraphBuilder(llm)
+        graph = graph_builder.setup_graph(usecase)
+
+        DisplayResultStreamlit(
+            usecase=usecase, graph=graph, user_message=user_message
+        ).display_result_on_ui()
+
+    except Exception as e:
+        st.error(f"⚠️ Error setting up graph: {e}")
+        st.stop()
