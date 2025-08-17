@@ -46,11 +46,11 @@ if not BRAVE_SEARCH_API_KEY:
 # -----------------------------------------------------------------------------
 # API Wrappers
 # -----------------------------------------------------------------------------
-arxiv_api_wrapper = ArxivAPIWrapper(top_k_results=3, load_max_docs=3, doc_content_chars_max=50000)
-wiki_api_wrapper = WikipediaAPIWrapper(top_k_results=3, lang="en", doc_content_chars_max=5000)
-duck_api_wrapper = DuckDuckGoSearchAPIWrapper(max_results=3)
+arxiv_api_wrapper = ArxivAPIWrapper(top_k_results=5, load_max_docs=5, doc_content_chars_max=50000)
+wiki_api_wrapper = WikipediaAPIWrapper(top_k_results=5, lang="en", doc_content_chars_max=5000)
+duck_api_wrapper = DuckDuckGoSearchAPIWrapper(max_results=5)
 google_scholar_api_wrapper = GoogleScholarAPIWrapper(
-    serp_api_key=SERP_API_KEY, top_k_results=3, hl="en"
+    serp_api_key=SERP_API_KEY, top_k_results=5, hl="en"
 )
 google_finance_api_wrapper = GoogleFinanceAPIWrapper(
     serp_api_key=SERP_API_KEY, serp_search_engine="google_finance"
@@ -68,8 +68,8 @@ serp_hotels_api_wrapper = SerpAPIWrapper(
 arxiv_tool = ArxivQueryRun(api_wrapper=arxiv_api_wrapper, verbose=True)
 wiki_tool = WikipediaQueryRun(api_wrapper=wiki_api_wrapper, verbose=True)
 duck_tool = DuckDuckGoSearchRun(api_wrapper=duck_api_wrapper, verbose=True)
-tavily_tool = TavilySearch(api_key=TAVILY_API_KEY, verbose=True, max_results=3, include_images=True)
-brave_tool = BraveSearch(search_kwargs={"max_results": 3}, verbose=True)
+tavily_tool = TavilySearch(api_key=TAVILY_API_KEY, verbose=True, max_results=5, include_images=True)
+brave_tool = BraveSearch(search_kwargs={"max_results": 5}, verbose=True)
 google_scholar_tool = GoogleScholarQueryRun(api_wrapper=google_scholar_api_wrapper, verbose=True)
 google_finance_tool = GoogleFinanceQueryRun(api_wrapper=google_finance_api_wrapper, verbose=True)
 google_jobs_tool = GoogleJobsQueryRun(api_wrapper=google_jobs_api_wrapper, verbose=True)

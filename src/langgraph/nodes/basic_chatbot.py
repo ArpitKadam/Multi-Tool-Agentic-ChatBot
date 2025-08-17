@@ -1,39 +1,47 @@
+from langchain_core.language_models import BaseLanguageModel
 from src.langgraph.state.state import State
 
 
 class BasicChatBotNode:
-    """
-    Represents a basic chatbot node that interacts with a provided LLM model.
-    It processes incoming conversation state and generates responses.
-    """
+    """A stateless node that processes conversation history through an LLM."""
 
-    def __init__(self, model):
+    def __init__(self, model: BaseLanguageModel):
         """
-        Initialize the BasicChatBotNode with a language model.
+        Initializes the node with a language model.
 
         Args:
-            model: An LLM instance (e.g., ChatGroq, ChatNVIDIA, ChatOpenAI).
+            model (BaseLanguageModel): An instance of a LangChain compatible language model.
         """
+        if not model:
+            raise ValueError("A language model instance must be provided.")
         self.llm = model
 
     def process(self, state: State) -> dict:
         """
-        Entry point for processing chatbot messages.
+        Invokes the language model with the current conversation messages.
 
         Args:
-            state (State): Current conversation state containing messages.
+            state (State): The current graph state, containing the list of messages.
 
         Returns:
-            dict: Updated state with the model's response included in "messages".
+            dict: A dictionary with the model's response message to update the state.
 
         Raises:
-            ValueError: If model invocation fails or llm is not initialized.
+            ValueError: If the language model fails to generate a response.
         """
-        if not self.llm:
-            raise ValueError("❌ No LLM model provided to BasicChatBotNode.")
-
         try:
-            response = self.llm.invoke(state.get("messages", []))
-            return {"messages": response}
+            # Get the list of messages from the current state
+            messages = state.get("messages", [])
+            if not messages:
+                # Handle cases where the input might be empty
+                return {"messages": []}
+
+            # Invoke the LLM with the conversation history
+            response = self.llm.invoke(messages)
+            
+            # Return the response in a format that updates the 'messages' key in the state
+            return {"messages": [response]}
+        
         except Exception as e:
-            raise ValueError(f"❌ Failed to process chatbot response: {e}")
+            # Wrap the original exception for better error diagnosis
+            raise ValueError(f"Failed to process chatbot response: {e}") from e

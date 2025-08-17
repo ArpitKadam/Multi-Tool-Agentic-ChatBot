@@ -1,60 +1,77 @@
+from __future__ import annotations
+
+from typing import Callable, List
+from langchain_core.language_models import BaseLanguageModel
+from langchain_core.tools import BaseTool
+
 from src.langgraph.state.state import State
-from typing import Callable, List, Any, Dict
 
 
 class ChatBotwithToolsNode:
     """
-    Represents a chatbot node that can use tools in addition to the base LLM.
-    The node binds tools to the LLM and returns a callable for processing messages.
+    A factory for creating a LangGraph node that augments an LLM with tools.
+
+    This class doesn't act as a node itself. Instead, its `process` method
+    configures an LLM with a given set of tools and returns a callable function
+    that can be used as a node in a StateGraph.
     """
 
-    def __init__(self, model):
+    def __init__(self, model: BaseLanguageModel):
         """
-        Initialize the ChatBotwithToolsNode with a language model.
+        Initializes the node factory with a language model.
 
         Args:
-            model: An LLM instance (e.g., ChatGroq, ChatNVIDIA, ChatOpenAI).
+            model (BaseLanguageModel): An instance of a LangChain compatible language model.
         """
+        if not model:
+            raise ValueError("A language model instance must be provided.")
         self.llm = model
 
-    def process(self, tools: List[Any]) -> Callable[[State], Dict[str, Any]]:
+    def process(self, tools: List[BaseTool]) -> Callable[[State], dict]:
         """
-        Binds tools to the LLM and returns a chatbot node function.
+        Configures the LLM with tools and returns a callable node function.
+
+        This method takes a list of tools, binds them to the initialized LLM,
+        and then returns a new function (`chatbot_node`) that will execute the
+        LLM with the tools when called by the graph.
 
         Args:
-            tools (List[Any]): List of tools to bind with the LLM.
+            tools (List[BaseTool]): A list of LangChain tool instances to be
+                                     made available to the LLM.
 
         Returns:
-            Callable[[State], Dict[str, Any]]: Function that processes state and generates responses.
-
+            Callable[[State], dict]: A function that can be added as a node to a
+                                     LangGraph, which processes the conversation
+                                     state and may decide to call a tool.
+        
         Raises:
-            ValueError: If LLM is not initialized or binding fails.
+            ValueError: If no tools are provided or if binding them to the LLM fails.
         """
-        if not self.llm:
-            raise ValueError("❌ No LLM model provided to ChatBotwithToolsNode.")
-
         if not tools:
-            raise ValueError("❌ No tools provided to ChatBotwithToolsNode.")
+            raise ValueError("A list of tools must be provided to this node.")
 
         try:
+            # Bind the tools to the LLM, creating a new model instance with tool-calling capabilities
             llm_with_tools = self.llm.bind_tools(tools)
         except Exception as e:
-            raise ValueError(f"❌ Failed to bind tools to LLM: {e}")
+            raise ValueError(f"Failed to bind tools to the language model: {e}") from e
 
-        def chatbot_node(state: State) -> Dict[str, Any]:
+        def chatbot_node(state: State) -> dict:
             """
-            Chat logic for processing the input state and returning the updated state.
-
-            Args:
-                state (State): Current conversation state containing messages.
-
-            Returns:
-                dict: Updated state with the model's response included in "messages".
+            The actual node logic that gets executed by the graph.
+            
+            It invokes the tool-augmented LLM with the current conversation state.
             """
             try:
-                response = llm_with_tools.invoke(state.get("messages", []))
+                messages = state.get("messages", [])
+                if not messages:
+                    return {"messages": []}
+                
+                # The response may be a text message or a tool call request
+                response = llm_with_tools.invoke(messages)
                 return {"messages": [response]}
+            
             except Exception as e:
-                raise ValueError(f"❌ Failed to process chatbot response with tools: {e}")
+                raise ValueError(f"Failed to process chatbot response with tools: {e}") from e
 
         return chatbot_node

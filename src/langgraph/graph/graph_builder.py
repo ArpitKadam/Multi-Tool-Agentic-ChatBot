@@ -1,121 +1,115 @@
+# --- Standard Library Imports ---
+from typing import Optional
+
+# --- Third-Party Imports ---
+from langchain_core.language_models import BaseLanguageModel
 from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import tools_condition
+
+# --- Local Application Imports ---
 from src.langgraph.state.state import State
 from src.langgraph.nodes.basic_chatbot import BasicChatBotNode
 from src.langgraph.nodes.tools_chatbot import ChatBotwithToolsNode
+from src.langgraph.nodes.ai_news import AINewsNode
 from src.langgraph.tools.tools import get_tools, create_tools_node
-from langgraph.prebuilt import tools_condition
 
 
 class GraphBuilder:
     """
-    A utility class for constructing LangGraph-based conversational agents.
+    Constructs various LangGraph workflows based on a specified use case.
 
-    This class can generate two types of conversational graphs:
-    1. Basic ChatBot → A simple chatbot that processes messages with an LLM.
-    2. ChatBot with Tools → A tool-augmented chatbot that can invoke external tools
-       (e.g., search, APIs) conditionally, based on conversation state.
+    This class acts as a factory for creating compiled graph objects for:
+    1. A simple conversational agent.
+    2. An agent augmented with external tools.
+    3. A sequential pipeline for fetching and summarizing AI news.
     """
 
-    def __init__(self, model):
+    def __init__(self, model: BaseLanguageModel):
         """
-        Initialize the GraphBuilder with a specific language model (LLM).
+        Initializes the GraphBuilder with a language model and node handlers.
 
         Args:
-            model: The language model instance (e.g., ChatGroq, ChatOpenAI, ChatNVIDIA).
+            model (BaseLanguageModel): The language model instance to be used by the nodes.
         """
         self.llm = model
         self.basic_chatbot_node = BasicChatBotNode(self.llm)
         self.chatbot_with_tools_node = ChatBotwithToolsNode(self.llm)
+        self.ai_news_node = AINewsNode(self.llm)
 
-    def basic_chatbot_graph_bilder(self):
+    def _build_basic_chatbot_graph(self):
         """
-        Build a **basic chatbot graph**.
+        Builds a graph for a basic chatbot with no external tools.
 
-        This graph has the following flow:
-        START → ChatBot → END
-
-        - "ChatBot" node uses the BasicChatBotNode to process user input.
-        - Suitable for simple, single-turn or multi-turn conversations without tools.
-
-        Returns:
-            Compiled LangGraph object, or None if an error occurs.
+        ## Graph Flow
+        `START` → `ChatBot` → `END`
         """
-        try:
-            graph_builder = StateGraph(State)
+        graph_builder = StateGraph(State)
+        graph_builder.add_node("ChatBot", self.basic_chatbot_node.process)
+        graph_builder.add_edge(START, "ChatBot")
+        graph_builder.add_edge("ChatBot", END)
+        return graph_builder.compile()
 
-            # Add a single chatbot node
-            graph_builder.add_node("ChatBot", self.basic_chatbot_node.process)
-
-            # Define graph flow
-            graph_builder.add_edge(START, "ChatBot")
-            graph_builder.add_edge("ChatBot", END)
-
-            return graph_builder.compile()
-
-        except Exception as e:
-            print(f"Error building basic chatbot graph: {e}")
-            return None
-
-    def chatbot_with_tools_graph_bilder(self):
+    def _build_chatbot_with_tools_graph(self):
         """
-        Build a **chatbot-with-tools graph**.
+        Builds a graph that can use tools to answer questions.
 
-        This graph has the following flow:
-        START → ChatBot ↔ tools → ChatBot → END
-
-        - "ChatBot" node uses ChatBotwithToolsNode to process input and decide if tools are needed.
-        - "tools" node executes external tools (search, APIs, etc.).
-        - Conditional edges (`tools_condition`) route execution to tools only when required.
-
-        Returns:
-            Compiled LangGraph object, or None if an error occurs.
+        ## Graph Flow
+        `START` → `ChatBot` → (conditional) ↴
+                  ↑└ `tools` ←┘
         """
-        try:
-            graph_builder = StateGraph(State)
+        graph_builder = StateGraph(State)
+        tools = get_tools()
+        tool_node = create_tools_node(tools)
 
-            # Initialize tools
-            tools = get_tools()
-            tool_node = create_tools_node(tools)
+        # The 'ChatBot' node can either respond directly or call a tool
+        graph_builder.add_node("ChatBot", self.chatbot_with_tools_node.process(tools))
+        graph_builder.add_node("tools", tool_node)
 
-            # Add chatbot and tool nodes
-            graph_builder.add_node("ChatBot", self.chatbot_with_tools_node.process(tools))
-            graph_builder.add_node("tools", tool_node)  # lowercase matches tools_condition
+        graph_builder.add_edge(START, "ChatBot")
+        graph_builder.add_conditional_edges("ChatBot", tools_condition)
+        graph_builder.add_edge("tools", "ChatBot")
+        return graph_builder.compile()
 
-            # Define graph flow
-            graph_builder.add_edge(START, "ChatBot")
-            graph_builder.add_conditional_edges("ChatBot", tools_condition)
-            graph_builder.add_edge("tools", "ChatBot")
+    def _build_ai_news_graph(self):
+        """
+        Builds a sequential graph for the AI news fetching pipeline.
 
-            return graph_builder.compile()
+        ## Graph Flow
+        `START` → `FetchNews` → `Summarize` → `SaveResult` → `END`
+        """
+        graph_builder = StateGraph(State)
+        graph_builder.add_node("FetchNews", self.ai_news_node.fetch_news)
+        graph_builder.add_node("Summarize", self.ai_news_node.summarize_news)
+        graph_builder.add_node("SaveResult", self.ai_news_node.save_result)
 
-        except Exception as e:
-            print(f"Error building chatbot-with-tools graph: {e}")
-            return None
+        graph_builder.add_edge(START, "FetchNews")
+        graph_builder.add_edge("FetchNews", "Summarize")
+        graph_builder.add_edge("Summarize", "SaveResult")
+        graph_builder.add_edge("SaveResult", END)
+        return graph_builder.compile()
 
     def setup_graph(self, usecase: str):
         """
-        Setup and return a graph based on the selected use case.
+        Selects and builds the appropriate graph based on the chosen use case.
 
         Args:
-            usecase (str): The type of chatbot graph to build.
-                Options:
-                    - "Basic ChatBot"
-                    - "ChatBot with Tools"
+            usecase (str): The desired graph type. Must be one of:
+                           "Basic ChatBot", "ChatBot with Tools", or "AI News".
 
         Returns:
-            Compiled LangGraph object, or None if setup fails.
+            Optional[CompiledGraph]: The compiled LangGraph object, or None if the
+                                     use case is invalid or an error occurs.
         """
         try:
             if usecase == "Basic ChatBot":
-                return self.basic_chatbot_graph_bilder()
-
+                return self._build_basic_chatbot_graph()
             elif usecase == "ChatBot with Tools":
-                return self.chatbot_with_tools_graph_bilder()
-
+                return self._build_chatbot_with_tools_graph()
+            elif usecase == "AI News":
+                return self._build_ai_news_graph()
             else:
-                print(f"Unknown use case: {usecase}")
+                print(f"Error: Unknown use case '{usecase}'")
                 return None
-
         except Exception as e:
-            print(f"Error setting up graph: {e}")
+            print(f"Error building graph for use case '{usecase}': {e}")
             return None
